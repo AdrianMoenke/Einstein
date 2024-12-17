@@ -123,6 +123,8 @@ celerybeat.pid
 
 *.wav
 *.idea
+test/
+output/
 
 # Environments
 .env

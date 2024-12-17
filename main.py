@@ -1,110 +1,116 @@
-# Project Idea: Create J.A.R.V.I.S your personal AI Assistant
+# Project Idea: Create Einstein your personal AI Assistant
 import playsound
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_ollama.llms import OllamaLLM
-from pyht import Client
 from dotenv import load_dotenv
-from pyht.client import TTSOptions
-import os
-from vosk import Model, KaldiRecognizer
-import argparse
-import queue
-import sys
 import sounddevice as sd
-import json
-import wx
+from melo.api import TTS
+import speech_recognition as sr
+import whisper
+import time
+import numpy as np
+import wave
 
-def starting_up_jarvis():
-    data = client.tts("Hello Sir! I am Jarvis. How can I help you today?", options, 'Play3.0-mini-http')
-    chunks: bytearray = bytearray()
+def init():
+    init_message = "Hello Sir! I am Einstein. How can I help you today?"
 
-    for chunk in data:
-        chunks.extend(chunk)
-    with open("output.wav", "wb") as f:
-        f.write(chunks)
+def voice_recognizer(audio_file: str):
+    model = whisper.load_model("turbo")
+    result = model.transcribe(audio_file)
+    return result["text"]
 
-    playsound.playsound("output.wav")
+def listen_for_codeword(mic_index = None):
+    recognizer = sr.Recognizer()
 
+    with sr.Microphone() as source:
+        print("Idle...")
+        while True:
+            audio = recognizer.listen(source)
+            with open("system_output.wav", "wb") as f:
+                f.write(audio.get_wav_data())
+            output = voice_recognizer("system_output.wav").lower()
+            try:
+                if "einstein" in output:
+                    listen_for_command(mic_index)
+            except sr.UnknownValueError:
+                pass
+            except sr.RequestError as e:
+                print(f"Fehler bei der Anfrage: {e}")
 
+def listen_for_command(mic_index = None):
+    SAMPLE_RATE = 44100  # Abtastrate
+    CHUNK_DURATION = 0.5  # Dauer eines Chunks in Sekunden
+    CHUNK_SIZE = int(SAMPLE_RATE * CHUNK_DURATION)  # Größe der Chunks
+    SILENCE_THRESHOLD = 0.00001  # Schwelle für Stille (zwischen 0 und 1)
+    SILENCE_DURATION = 2  # Sekunden, die Stille dauern muss, um zu stoppen
+    DEBUG = True  # Debug-Modus für Lautstärkeinformationen
+    output_file = "user_output.wav"
 
-def int_or_str(text2):
-    """Helper function for argument parsing."""
-    try:
-        return int(text2)
-    except ValueError:
-        return text2
+    print("Starte Aufnahme...")
+    audio_frames = []  # Liste, um die Audio-Chunks zu speichern
+    silent_duration = 0  # Dauer der Stille
+    is_recording = True
+    start_time = time.time()
 
-def callback(indata, frames, time, status):
-    """This is called (from a separate thread) for each audio block."""
-    if status:
-        print(status, file=sys.stderr)
-    q.put(bytes(indata))
+    def callback(indata, frames, time, status):
+        """Callback-Funktion, die für jeden Chunk aufgerufen wird."""
+        nonlocal silent_duration, is_recording, audio_frames
 
-def listen():
-    parser = argparse.ArgumentParser(add_help=False)
-    parser.add_argument(
-        "-l", "--list-devices", action="store_true",
-        help="show list of audio devices and exit")
-    args, remaining = parser.parse_known_args()
-    if args.list_devices:
-        print(sd.query_devices())
-        parser.exit(0)
-    parser = argparse.ArgumentParser(
-        description=__doc__,
-        formatter_class=argparse.RawDescriptionHelpFormatter,
-        parents=[parser])
-    parser.add_argument(
-        "-f", "--filename", type=str, metavar="FILENAME",
-        help="audio file to store recording to")
-    parser.add_argument(
-        "-d", "--device", type=int_or_str,
-        help="input device (numeric ID or substring)")
-    parser.add_argument(
-        "-r", "--samplerate", type=int, help="sampling rate")
-    parser.add_argument(
-        "-m", "--model", type=str, help="language model; e.g. en-us, fr, nl; default is en-us")
-    args = parser.parse_args(remaining)
+        # Lautstärke des aktuellen Chunks berechnen
+        volume_norm = np.linalg.norm(indata) / len(indata)
+        if DEBUG:
+            print(f"Lautstärke (Normwert): {volume_norm:.6f}")
 
-    try:
-        if args.samplerate is None:
-            device_info = sd.query_devices(args.device, "input")
-            # soundfile expects an int, sounddevice provides a float:
-            args.samplerate = int(device_info["default_samplerate"])
-
-        if args.model is None:
-            model = Model(lang="de")
+        # Prüfen, ob der aktuelle Chunk als Stille gilt
+        if volume_norm < SILENCE_THRESHOLD:
+            silent_duration += CHUNK_DURATION
         else:
-            model = Model(lang=args.model)
+            silent_duration = 0  # Stille-Count zurücksetzen, wenn Ton erkannt wird
 
-        if args.filename:
-            dump_fn = open(args.filename, "wb")
-        else:
-            dump_fn = None
+        # Audio-Chunk speichern
+        audio_frames.append(indata.copy())
 
-        with sd.RawInputStream(samplerate=args.samplerate, blocksize=8000, device=args.device,
-                               dtype="int16", channels=1, callback=callback):
+        # Aufnahme stoppen, wenn die Stille die Schwelle erreicht
+        if silent_duration >= SILENCE_DURATION:
+            print(f"Stille erkannt nach {silent_duration:.2f} Sekunden.")
+            is_recording = False
 
-            print("#############")
-            print("Listening....")
-            print("#############")
+    try:
+        # Mikrofon-Stream starten
+        with sd.InputStream(samplerate=SAMPLE_RATE, channels=1, callback=callback, blocksize=CHUNK_SIZE,
+                            device=mic_index):
+            while is_recording:
+                sd.sleep(int(CHUNK_DURATION * 1000))  # Wartezeit pro Chunk
+    except Exception as e:
+        print(f"Fehler während der Aufnahme: {e}")
 
-            rec = KaldiRecognizer(model, args.samplerate)
-            while True:
-                data = q.get()
-                if rec.AcceptWaveform(data):
-                    global text
-                    user_input = json.loads(rec.Result())
-                    text = user_input['text']
-                    if "Jarvis" in text or "jarvis" in text:
-                        return
-                if dump_fn is not None:
-                    dump_fn.write(data)
+    print("Aufnahme gestoppt.")
+    print(f"Gesamtdauer der Aufnahme: {time.time() - start_time:.2f} Sekunden")
 
-    except KeyboardInterrupt:
-        print("\nDone")
-        parser.exit(0)
+    # Aufnahme speichern
+    print("Speichere Aufnahme...")
+    frames_np = np.concatenate(audio_frames, axis=0)
+    with wave.open(output_file, "wb") as wf:
+        wf.setnchannels(1)  # Mono
+        wf.setsampwidth(2)  # 16-Bit
+        wf.setframerate(SAMPLE_RATE)
+        wf.writeframes((frames_np * 32767).astype(np.int16).tobytes())
 
+    print(f"Aufnahme gespeichert als {output_file}")
 
+def list_microphones():
+    """Listet verfügbare Mikrofone auf."""
+    devices = sd.query_devices()
+    print("Verfügbare Audio-Geräte:")
+    for idx, device in enumerate(devices):
+        print(f"{idx}: {device['name']}")
+
+def get_device_info(index):
+    """Gibt Informationen über ein bestimmtes Gerät zurück."""
+    device_info = sd.query_devices(index)
+    max_input_channels = device_info["max_input_channels"]
+    print(f"Gerät: {device_info['name']} | Max. Eingabekanäle: {max_input_channels}")
+    return max_input_channels
 
 def running_jarvis(user_input):
     print("User:" + user_input)
@@ -124,58 +130,25 @@ def running_jarvis(user_input):
 
     playsound.playsound("output.wav")
 
-class MainWindow(wx.Frame):
-    def __init__(self, parent, title):
-        wx.Frame.__init__(self, parent, title=title, size=(500, 500))
-
-        self.button = wx.Button(self, label="My simple app.")
-        self.Bind(
-            wx.EVT_BUTTON, self.handle_button_click, self.button
-        )
-
-        self.sizer = wx.BoxSizer(wx.VERTICAL)
-        self.sizer.Add(self.button)
-
-        self.SetSizer(self.sizer)
-        self.SetAutoLayout(True)
-        self.Show()
-
-    def handle_button_click(self, event):
-        self.Close()
-
-
-def buildUI():
-    app = wx.App(False)
-    w = MainWindow(None, "Hello World")
-    app.MainLoop()
-
-
-if __name__ == '__main__':
-    text = ""
-
-    client = Client(
-        user_id=os.getenv("PLAY_HT_USER_ID"),
-        api_key=os.getenv("PLAY_HT_API_KEY"),
-    )
-
-    options = TTSOptions(
-        voice="s3://voice-cloning-zero-shot/9f1ee23a-9108-4538-90be-8e62efc195b6/charlessaad/manifest.json")
-
+def main():
+    list_microphones()
+    mic_index = int(input("Wähle die Nummer deines Mikrofons: "))
+    listen_for_codeword(mic_index)
+    load_dotenv()
     template = """You are a Jarvis, an AI voice Assistant. You can help with many different tasks and provide information
-            on everything. You refer to me as sir and answer short and direct.
+                    on everything. You refer to me as sir and answer short and direct.
 
-            Question: {question}
+                    Question: {question}
 
-            Answer: Answer short and direct and refer to me as sir"""
-
+                    Answer: Answer short and direct and refer to me as sir"""
     prompt = ChatPromptTemplate.from_template(template)
     model = OllamaLLM(model="llama3.2")
     chain = prompt | model
+    text = ""
+    speed = 1.0
+    device = 'cpu'
+    text_2 = "test"
 
-    load_dotenv()
-    q = queue.Queue()
-    #buildUI()
-    starting_up_jarvis()
-    while True:
-        listen()
-        running_jarvis(text)
+
+if __name__ == '__main__':
+    main()

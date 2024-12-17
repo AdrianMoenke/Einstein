@@ -1,0 +1,17 @@
+{
+  "prefixes": {
+    "debug": "[DEBUG]",
+    "error": "[ERROR]",
+    "info": "[INFO]",
+    "warning": "[WARNING]",
+    "system_output": "Einstein:",
+    "user_input": "Du:"
+  },
+  "codewords": [
+    "einstein",
+    "hey einstein",
+    "hi einstein",
+    "hallo einstein",
+    "moin einstein"
+  ]
+}
