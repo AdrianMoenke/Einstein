@@ -124,6 +124,7 @@ celerybeat.pid
 *.wav
 *.idea
 test/
+piper/
 output/
 
 # Environments
