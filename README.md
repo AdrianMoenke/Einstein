@@ -42,5 +42,5 @@ As there are a lot of problems with all the python packages, Apple Silicon (M1/2
           
           clean:
           	rm -rf build install
-6.  Download the german voice model Thorsten (as this is the best german model available): https://github.com/rhasspy/piper/blob/master/VOICES.md
-7.  Rename the voice model file
+6.  Download the german voice model Thorsten and the config (as this is the best german model available): https://github.com/rhasspy/piper/blob/master/VOICES.md
+7.  Rename the voice model to voice_model.onnx and the config to voice_model.onnx.json and put it in the utilities folder
