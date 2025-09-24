@@ -17,8 +17,12 @@ class Memory:
         self.load()
 
     def load(self):
-        with open(self.file_path, "r") as f:
-            self.data = json.load(f)
+        try:
+            with open(self.file_path, "r") as f:
+                self.data = json.load(f)
+        except (FileNotFoundError, json.JSONDecodeError):
+            self.data = {"facts": [], "reminders": []}
+            self.save()
 
     def save(self):
         with open(self.file_path, "w") as f:
