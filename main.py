@@ -13,7 +13,7 @@ class Memory:
         self.file_path = file_path
         if not os.path.exists(file_path):
             with open(file_path, "w") as f:
-                json.dump({"facts": [], {"reminders": []}, f)
+                json.dump({"facts": [], "reminders": []}, f, indent=2)
         self.load()
 
     def load(self):
