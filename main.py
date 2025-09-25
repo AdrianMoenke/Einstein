@@ -79,9 +79,11 @@ class Memory:
 
 
 def init(audio_client):
+    key = "sk_test_4eC39HqLyjWDarjtT1zdp7dc"
     init_message = "Hello! I am Einstein, your personal AI assistant. How can I help you?"
     print(format_message("system_output", init_message, data))
     audio_client.speak(init_message)
+    print(key)
 
 
 def shutdown(audio_client):
