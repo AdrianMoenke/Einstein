@@ -13,7 +13,7 @@ class Memory:
         self.file_path = file_path
         if not os.path.exists(file_path):
             with open(file_path, "w") as f:
-                json.dump({"facts": [], "reminders": [], "tasks": []}, f)
+                json.dump({"facts": [], "reminders": [], "tasks": [], "journals": []}, f)
         self.load()
 
     def load(self):
@@ -24,12 +24,10 @@ class Memory:
         with open(self.file_path, "w") as f:
             json.dump(self.data, f, indent=2)
 
-    # --- FACTS ---
     def add_fact(self, fact: str):
         self.data["facts"].append(fact)
         self.save()
 
-    # --- REMINDERS ---
     def add_reminder(self, text: str, time: str):
         self.data["reminders"].append({"text": text, "time": time})
         self.save()
@@ -41,7 +39,6 @@ class Memory:
         self.save()
         return due
 
-    # --- TASKS ---
     def add_task(self, task: str):
         self.data["tasks"].append({"task": task, "done": False})
         self.save()
@@ -57,6 +54,14 @@ class Memory:
                 return True
         return False
 
+    def add_journal_entry(self, entry: str):
+        timestamp = datetime.now().strftime("%Y-%m-%d %H:%M")
+        self.data["journals"].append({"time": timestamp, "entry": entry})
+        self.save()
+
+    def get_recent_journal(self, limit=3):
+        return self.data["journals"][-limit:]
+
 
 def init(audio_client):
     init_message = "Hello! I am Einstein, your personal AI assistant. How can I help you?"
@@ -71,23 +76,19 @@ def shutdown(audio_client):
 
 
 def running_einstein(audio_client, memory: Memory):
-    # Check reminders
     reminders = memory.get_due_reminders()
     for r in reminders:
         reminder_message = f"Reminder: {r['text']}"
         print(format_message("system_output", reminder_message, data))
         audio_client.speak(reminder_message)
 
-    # Listen
     user_input = audio_client.listen_for_codeword().lower()
     print(format_message("user_input", user_input, data))
 
-    # Exit
     if user_input in ["goodbye.", "bye.", "see you.", "ciao.", "later.", "take care."]:
         shutdown(audio_client)
         return False
 
-    # --- REMINDERS ---
     if user_input.startswith("remind me"):
         if "about" in user_input:
             parts = user_input.split("about", 1)
@@ -99,7 +100,6 @@ def running_einstein(audio_client, memory: Memory):
             audio_client.speak(confirmation)
             return True
 
-    # --- FACTS ---
     if user_input.startswith("remember"):
         fact = user_input.replace("remember", "").strip()
         memory.add_fact(fact)
@@ -108,7 +108,6 @@ def running_einstein(audio_client, memory: Memory):
         audio_client.speak(confirmation)
         return True
 
-    # --- TASKS ---
     if user_input.startswith("add task"):
         task = user_input.replace("add task", "").strip()
         memory.add_task(task)
@@ -138,7 +137,26 @@ def running_einstein(audio_client, memory: Memory):
         audio_client.speak(response)
         return True
 
-    # --- DEFAULT: Use LLM ---
+    if user_input.startswith("write journal"):
+        entry = user_input.replace("write journal", "").strip()
+        memory.add_journal_entry(entry)
+        confirmation = "Journal entry saved."
+        print(format_message("system_output", confirmation, data))
+        audio_client.speak(confirmation)
+        return True
+
+    if user_input.startswith("read journal"):
+        entries = memory.get_recent_journal()
+        if entries:
+            response = "Here are your recent journal entries: " + " | ".join(
+                [f"[{e['time']}] {e['entry']}" for e in entries]
+            )
+        else:
+            response = "Your journal is empty."
+        print(format_message("system_output", response, data))
+        audio_client.speak(response)
+        return True
+
     template = """You are Einstein, an AI voice assistant. You can help with many different tasks
                   and provide information about everything. Always keep answers short and direct.
 
