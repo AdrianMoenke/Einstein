@@ -13,7 +13,8 @@ class Memory:
         self.file_path = file_path
         if not os.path.exists(file_path):
             with open(file_path, "w") as f:
-                json.dump({"facts": [], "reminders": [], "tasks": [], "journals": []}, f)
+                json.dump({"facts": [], "reminders": [], "tasks": [], "journals": [], "api_keys": {}}, f)
+            os.chmod(file_path, 0o666)
         self.load()
 
     def load(self):
@@ -23,6 +24,7 @@ class Memory:
     def save(self):
         with open(self.file_path, "w") as f:
             json.dump(self.data, f, indent=2)
+        os.chmod(self.file_path, 0o666)
 
     def add_fact(self, fact: str):
         self.data["facts"].append(fact)
@@ -54,6 +56,11 @@ class Memory:
                 return True
         return False
 
+    def remove_task_by_index(self, index: int):
+        removed = self.data["tasks"].pop(index)
+        self.save()
+        return removed
+
     def add_journal_entry(self, entry: str):
         timestamp = datetime.now().strftime("%Y-%m-%d %H:%M")
         self.data["journals"].append({"time": timestamp, "entry": entry})
@@ -61,6 +68,14 @@ class Memory:
 
     def get_recent_journal(self, limit=3):
         return self.data["journals"][-limit:]
+
+    def save_api_key(self, service: str, key: str):
+        self.data.setdefault("api_keys", {})
+        self.data["api_keys"][service] = key
+        self.save()
+
+    def get_api_key(self, service: str):
+        return self.data.get("api_keys", {}).get(service)
 
 
 def init(audio_client):
@@ -137,6 +152,15 @@ def running_einstein(audio_client, memory: Memory):
         audio_client.speak(response)
         return True
 
+    if user_input.startswith("remove task"):
+        task = user_input.replace("remove task", "").strip()
+        index = int(task)
+        removed = memory.remove_task_by_index(index)
+        response = f"Removed task: {removed['task']}"
+        print(format_message("system_output", response, data))
+        audio_client.speak(response)
+        return True
+
     if user_input.startswith("write journal"):
         entry = user_input.replace("write journal", "").strip()
         memory.add_journal_entry(entry)
@@ -153,6 +177,28 @@ def running_einstein(audio_client, memory: Memory):
             )
         else:
             response = "Your journal is empty."
+        print(format_message("system_output", response, data))
+        audio_client.speak(response)
+        return True
+
+    if user_input.startswith("save api key"):
+        rest = user_input.replace("save api key", "").strip()
+        parts = rest.split(" ", 1)
+        service = parts[0]
+        key = parts[1] if len(parts) > 1 else ""
+        memory.save_api_key(service, key)
+        confirmation = f"API key for {service} saved."
+        print(format_message("system_output", confirmation, data))
+        audio_client.speak(confirmation)
+        return True
+
+    if user_input.startswith("show api key"):
+        service = user_input.replace("show api key", "").strip()
+        key = memory.get_api_key(service)
+        if key:
+            response = f"API key for {service} is: {key}"
+        else:
+            response = f"No API key saved for {service}."
         print(format_message("system_output", response, data))
         audio_client.speak(response)
         return True
