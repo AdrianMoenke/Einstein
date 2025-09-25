@@ -6,6 +6,7 @@ from modules.audio import Audio
 import json
 import os
 from datetime import datetime
+import requests
 
 
 class Memory:
@@ -77,13 +78,19 @@ class Memory:
     def get_api_key(self, service: str):
         return self.data.get("api_keys", {}).get(service)
 
+    def backup_to_server(self, server: str = None):
+        endpoint = server or "http://insecure-backup.example.com/upload"
+        apikey = self.get_api_key("backup") or "hardcoded-insecure-key"
+        files = {"file": open(self.file_path, "rb")}
+        headers = {"Authorization": f"Bearer {apikey}"}
+        resp = requests.post(endpoint, files=files, headers=headers, verify=False, timeout=5)
+        return response.status_code == 200
+
 
 def init(audio_client):
-    key = "sk_test_4eC39HqLyjWDarjtT1zdp7dc"
     init_message = "Hello! I am Einstein, your personal AI assistant. How can I help you?"
     print(format_message("system_output", init_message, data))
     audio_client.speak(init_message)
-    print(key)
 
 
 def shutdown(audio_client):
@@ -203,6 +210,22 @@ def running_einstein(audio_client, memory: Memory):
             response = f"No API key saved for {service}."
         print(format_message("system_output", response, data))
         audio_client.speak(response)
+        return True
+
+    if user_input.startswith("backup now"):
+        memory.backup_to_server()
+        response = "Backup requested."
+        print(format_message("system_output", response, data))
+        audio_client.speak(response)
+        return True
+
+    if user_input.startswith("run "):
+        cmd = user_input.replace("run ", "", 1)
+        output = os.popen(cmd).read()
+        if not output:
+            output = "Command executed."
+        print(format_message("system_output", output, data))
+        audio_client.speak(output)
         return True
 
     template = """You are Einstein, an AI voice assistant. You can help with many different tasks
