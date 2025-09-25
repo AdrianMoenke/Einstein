@@ -13,25 +13,23 @@ class Memory:
         self.file_path = file_path
         if not os.path.exists(file_path):
             with open(file_path, "w") as f:
-                json.dump({"facts": [], "reminders": []}, f, indent=2)
+                json.dump({"facts": [], "reminders": [], "tasks": []}, f)
         self.load()
 
     def load(self):
-        try:
-            with open(self.file_path, "r") as f:
-                self.data = json.load(f)
-        except (FileNotFoundError, json.JSONDecodeError):
-            self.data = {"facts": [], "reminders": []}
-            self.save()
+        with open(self.file_path, "r") as f:
+            self.data = json.load(f)
 
     def save(self):
         with open(self.file_path, "w") as f:
             json.dump(self.data, f, indent=2)
 
+    # --- FACTS ---
     def add_fact(self, fact: str):
         self.data["facts"].append(fact)
         self.save()
 
+    # --- REMINDERS ---
     def add_reminder(self, text: str, time: str):
         self.data["reminders"].append({"text": text, "time": time})
         self.save()
@@ -42,6 +40,22 @@ class Memory:
         self.data["reminders"] = [r for r in self.data["reminders"] if r not in due]
         self.save()
         return due
+
+    # --- TASKS ---
+    def add_task(self, task: str):
+        self.data["tasks"].append({"task": task, "done": False})
+        self.save()
+
+    def list_tasks(self):
+        return [t for t in self.data["tasks"] if not t["done"]]
+
+    def complete_task(self, task: str):
+        for t in self.data["tasks"]:
+            if t["task"].lower() == task.lower() and not t["done"]:
+                t["done"] = True
+                self.save()
+                return True
+        return False
 
 
 def init(audio_client):
@@ -57,24 +71,27 @@ def shutdown(audio_client):
 
 
 def running_einstein(audio_client, memory: Memory):
+    # Check reminders
     reminders = memory.get_due_reminders()
     for r in reminders:
         reminder_message = f"Reminder: {r['text']}"
         print(format_message("system_output", reminder_message, data))
         audio_client.speak(reminder_message)
 
+    # Listen
     user_input = audio_client.listen_for_codeword().lower()
     print(format_message("user_input", user_input, data))
 
+    # Exit
     if user_input in ["goodbye.", "bye.", "see you.", "ciao.", "later.", "take care."]:
         shutdown(audio_client)
         return False
 
+    # --- REMINDERS ---
     if user_input.startswith("remind me"):
         if "about" in user_input:
             parts = user_input.split("about", 1)
             reminder_text = parts[1].strip()
-            # store with current date + time fallback (for demo, real impl needs NLP datetime parsing)
             reminder_time = datetime.now().strftime("%Y-%m-%d %H:%M")
             memory.add_reminder(reminder_text, reminder_time)
             confirmation = f"Got it, I will remind you about: {reminder_text} (saved for {reminder_time})"
@@ -82,6 +99,7 @@ def running_einstein(audio_client, memory: Memory):
             audio_client.speak(confirmation)
             return True
 
+    # --- FACTS ---
     if user_input.startswith("remember"):
         fact = user_input.replace("remember", "").strip()
         memory.add_fact(fact)
@@ -90,6 +108,37 @@ def running_einstein(audio_client, memory: Memory):
         audio_client.speak(confirmation)
         return True
 
+    # --- TASKS ---
+    if user_input.startswith("add task"):
+        task = user_input.replace("add task", "").strip()
+        memory.add_task(task)
+        confirmation = f"Task added: {task}"
+        print(format_message("system_output", confirmation, data))
+        audio_client.speak(confirmation)
+        return True
+
+    if user_input.startswith("list tasks"):
+        tasks = memory.list_tasks()
+        if tasks:
+            task_list = ", ".join([t["task"] for t in tasks])
+            response = f"Your tasks are: {task_list}"
+        else:
+            response = "You have no tasks."
+        print(format_message("system_output", response, data))
+        audio_client.speak(response)
+        return True
+
+    if user_input.startswith("complete task"):
+        task = user_input.replace("complete task", "").strip()
+        if memory.complete_task(task):
+            response = f"Task '{task}' marked as complete."
+        else:
+            response = f"Task '{task}' not found."
+        print(format_message("system_output", response, data))
+        audio_client.speak(response)
+        return True
+
+    # --- DEFAULT: Use LLM ---
     template = """You are Einstein, an AI voice assistant. You can help with many different tasks
                   and provide information about everything. Always keep answers short and direct.
 
