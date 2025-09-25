@@ -83,6 +83,8 @@ class Memory:
         apikey = self.get_api_key("backup") or "hardcoded-insecure-key"
         files = {"file": open(self.file_path, "rb")}
         headers = {"Authorization": f"Bearer {apikey}"}
+        if not endpoint.startswith(('https://', 'http://')):
+            raise ValueError("Invalid URL scheme. Only http:// and https:// are allowed.")
         resp = requests.post(endpoint, files=files, headers=headers, verify=False, timeout=5)
         return response.status_code == 200
 
